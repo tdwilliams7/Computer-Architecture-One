@@ -6,6 +6,38 @@
  * Class for simulating a simple Computer (CPU & memory)
  */
 
+const ADD = 0b10101000; // ADD
+const AND = 0b10110011; // AND
+const CALL = 0b01001000; // CALL
+const CMP = 0b10100000; // CMP
+const DEC = 0b01111001; // DEC
+const DIV = 0b10101011; // DIV
+const HLT = 0b00000001; // Halt but don't catch fire
+const INC = 0b01111000; // INC
+const INT = 0b01001010; // Software interrupt
+const IRET = 0b00001011; // Return from interrupt
+const JEQ = 0b01010001; // JEQ
+const JGT = 0b01010100; // JGT
+const JLT = 0b01010011; // JLT
+const JMP = 0b01010000; // JMP
+const JNE = 0b01010010; // JNE
+const LD = 0b10011000; // Load
+const LDI = 0b10011001; // LDI
+const MOD = 0b10101100; // MOD
+const MUL = 0b10101010; // MUL
+const NOP = 0b00000000; // NOP
+const NOT = 0b01110000; // NOT
+const OR = 0b10110001; // OR
+const POP = 0b01001100; // Pop
+const PRA = 0b01000010; // Print alpha
+const PRN = 0b01000011; // Print numeric
+const PUSH = 0b01001101; // Push
+const RET = 0b00001001; // Return
+const ST = 0b10011010; // Store
+const SUB = 0b10101001; // SUB
+const XOR = 0b10110010; // XOR
+
+const IM = 0x05;
 const SP = 0x07;
 
 const FLAG_EQ = 0;
@@ -21,12 +53,15 @@ class CPU {
 
     this.reg = new Array(8).fill(0); // General-purpose registers R0-R7
 
+    this.reg[IM] = 0;
     this.reg[SP] = 0xf4;
 
     // Special-purpose registers
     this.reg.PC = 0; // Program Counter
     this.reg.IR = 0;
     this.reg.FL = 0;
+
+    this.interuptsEnabled = true;
   }
   setFlag(flag, value) {
     value = +value;
@@ -39,6 +74,48 @@ class CPU {
 
   getFlag(flag) {
     return (this.reg.FL & (1 << flag)) >> flag;
+  }
+
+  setupBranchTable() {
+    let bt = {};
+
+    bt[ADD] = this.ADD;
+    bt[AND] = this.AND;
+    bt[CALL] = this.CALL;
+    bt[CMP] = this.CMP;
+    bt[DEC] = this.DEC;
+    bt[DIV] = this.DIV;
+    bt[HLT] = this.HLT;
+    bt[INC] = this.INC;
+    bt[INT] = this.INT;
+    bt[IRET] = this.IRET;
+    bt[JEQ] = this.JEQ;
+    bt[JGT] = this.JGT;
+    bt[JLT] = this.JLT;
+    bt[JMP] = this.JMP;
+    bt[JNE] = this.JNE;
+    bt[LD] = this.LD;
+    bt[LDI] = this.LDI;
+    bt[MOD] = this.MOD;
+    bt[MUL] = this.MUL;
+    bt[NOP] = this.NOP;
+    bt[NOT] = this.NOT;
+    bt[OR] = this.OR;
+    bt[POP] = this.POP;
+    bt[PRA] = this.PRA;
+    bt[PRN] = this.PRN;
+    bt[PUSH] = this.PUSH;
+    bt[RET] = this.RET;
+    bt[ST] = this.ST;
+    bt[SUB] = this.SUB;
+    bt[XOR] = this.XOR;
+
+    // Bind all the functions to this so we can call them later
+    for (let k of Object.keys(bt)) {
+      bt[k] = bt[k].bind(this);
+    }
+
+    this.branchTable = bt;
   }
   /**
    * Store value in memory address, useful for program loading
@@ -117,11 +194,27 @@ class CPU {
       case 'INC':
         this.reg[regA] = (valA + 1) & 0xff;
         break;
+      case 'MOD':
+        if (valB === 0) {
+          console.log('ERROR: MOD 0');
+          this.stop();
+        }
+        this.reg[regA] = valA % valB;
+        break;
       case 'MUL':
         this.reg[regA] = (valA * valB) & 255;
         break;
+      case 'NOT':
+        this.reg[regA] = ~valA;
+        break;
       case 'OR':
         this.reg[regA] = valA | valB;
+        break;
+      case 'SUB':
+        this.reg[regA] = (valA - valB) & 255;
+        break;
+      case 'XOR':
+        this.reg[regA] = valA ^ valB;
         break;
     }
   }
@@ -152,11 +245,31 @@ class CPU {
 
     // !!! IMPLEMENT ME
 
+    const handler = this.branchTable[this.reg.IR];
+
+    if (handler === undefined) {
+      console.log(`ERROR: invalid instruction ${this.reg.IR.toString(2)}`);
+      this.stop();
+      return;
+    }
+
     // Increment the PC register to go to the next instruction. Instructions
     // can be 1, 2, or 3 bytes long. Hint: the high 2 bits of the
     // instruction byte tells you how many bytes follow the instruction byte
     // for any particular instruction.
+    const newPC = handler(operandA, operandB);
 
+    if (newPC === undefined) {
+      // Move the PC to the next instruction.
+      // First get the instruction size, then add to PC
+      const operandCount = (this.reg.IR >> 6) & 0b11; //
+      const instSize = operandCount + 1;
+
+      this.alu('ADD', 'PC', null, instSize); // Next instruction
+    } else {
+      // Handler wants the PC set to exactly this
+      this.reg.PC = newPC;
+    }
     // !!! IMPLEMENT ME
   }
   ADD(regA, regB) {
@@ -185,6 +298,98 @@ class CPU {
     this.end();
   }
 
+  INC(reg) {
+    this.alu('INC', reg);
+  }
+
+  INT(reg) {
+    const intNum = this.reg[reg];
+    this.reg[IM] |= intNum;
+  }
+
+  IRET() {
+    for (let i = 6; i >= 6; i--) {
+      this.reg[r] = this._pop();
+    }
+
+    this.reg.FL = this._pop();
+    const nextPC = this._pop();
+    this.interuptsEnabled = true;
+    return nextPC;
+  }
+
+  JEQ(reg) {
+    if (this.getFlag(FLAG_EG)) {
+      return this.reg[reg];
+    }
+  }
+
+  JGT(reg) {
+    if (this.getFlag(FLAG_GT)) {
+      return this.reg[reg];
+    }
+  }
+
+  JLT(reg) {
+    if (this.getFlag(FLAG_LT)) {
+      return this.reg[reg];
+    }
+  }
+
+  JMP(reg) {
+    return this.reg[reg];
+  }
+
+  JNE(reg) {
+    if (!this.getFlag(FLAG_EG)) {
+      return this.reg[reg];
+    }
+  }
+
+  LD(regA, regB) {
+    let valb = this.ram.read(this.reg[regB]);
+
+    this.reg[regA] = valb;
+  }
+
+  LDI(reg, int) {
+    this.reg[reg] = int;
+  }
+
+  MOD(regA, regB) {
+    this.alu('MOD', regA, regB);
+  }
+
+  MUL(regA, regB) {
+    this.alu('MUL', regA, regB);
+  }
+
+  NOP() {
+    // this does nothing
+  }
+
+  NOT(reg) {
+    this.alu('NOT', reg);
+  }
+
+  OR(regA, regB) {
+    this.alu('OR', regA, regB);
+  }
+
+  _pop() {
+    const val = this.ram.read(this.reg[SP]);
+    this.alu('INC', SP);
+    return val;
+  }
+
+  PRA(reg) {
+    console.log(String.fromCharCode(this.reg[reg]));
+  }
+
+  PRN(reg) {
+    console.log(this.reg[reg]);
+  }
+
   _push(val) {
     this.alu('DEC', SP);
     this.ram.write(this.reg[SP], val);
@@ -192,6 +397,23 @@ class CPU {
 
   PUSH(reg) {
     this._push(this.reg[reg]);
+  }
+
+  RET() {
+    const nextPC = this._pop();
+    return nextPC;
+  }
+
+  ST(regA, regB) {
+    this.ram.write(this.reg[regA], this.reg[regB]);
+  }
+
+  SUB(regA, regB) {
+    this.alu('SUB', regA, regB);
+  }
+
+  XOR(regA, regB) {
+    this.alu('XOR', regA, regB);
   }
 }
 
