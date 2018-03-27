@@ -62,6 +62,8 @@ class CPU {
     this.reg.FL = 0;
 
     this.interuptsEnabled = true;
+
+    this.setupBranchTable();
   }
   setFlag(flag, value) {
     value = +value;
@@ -222,29 +224,53 @@ class CPU {
   /**
    * Advances the CPU one cycle
    */
+  // Check to see if there's an interrupt
   tick() {
-    // Load the instruction register (IR--can just be a local variable here)
-    // from the memory address pointed to by the PC. (I.e. the PC holds the
-    // index into memory of the next instruction.)
-    this.req.IR = this.ram.read(this.reg.PC);
+    if (this.interruptsEnabled) {
+      // Take the current interrupts and mask them out with the interrupt
+      // mask
+      const maskedInterrupts = this.reg[IS] & this.reg[IM];
 
-    // !!! IMPLEMENT ME
+      // Check all the masked interrupts to see if they're active
+      for (let i = 0; i < 8; i++) {
+        // If it's still 1 after being masked, handle it
+        if (((maskedInterrupts >> i) & 0x01) === 1) {
+          // Only handle one interrupt at a time
+          this.interruptsEnabled = false;
 
-    // Debugging output
-    //console.log(`${this.reg.PC}: ${IR.toString(2)}`);
+          // Clear this interrupt in the status register
+          this.reg[IS] &= ~intMask[i];
 
-    // Get the two bytes in memory _after_ the PC in case the instruction
-    // needs them.
+          // Push return address
+          this._push(this.reg.PC);
 
-    // !!! IMPLEMENT ME
-    const operandA = this.ram.read((this.reg.PC + 1) & 0xff);
-    const operandB = this.ram.read((this.req.PC + 2) & 0xff);
+          // Push flags
+          this._push(this.reg.FL);
 
-    // Execute the instruction. Perform the actions for the instruction as
-    // outlined in the LS-8 spec.
+          // Push registers R0-R6
+          for (let r = 0; r <= 6; r++) {
+            this._push(this.reg[r]);
+          }
 
-    // !!! IMPLEMENT ME
+          // Look up the vector (handler address) in the
+          // interrupt vector table
+          const vector = this.ram.read(0xf8 + i);
 
+          this.reg.PC = vector; // Jump to it
+
+          // Stop looking for more interrupts, since we do one
+          // at a time
+          break;
+        }
+      }
+    }
+    // Load the instruction register from the current PC
+    this.reg.IR = this.ram.read(this.reg.PC);
+
+    //console.log(`${this.reg.PC}: ${this.reg.IR.toString(2)}`);
+
+    // Based on the value in the Instruction Register, jump to the
+    // appropriate hander
     const handler = this.branchTable[this.reg.IR];
 
     if (handler === undefined) {
@@ -253,10 +279,17 @@ class CPU {
       return;
     }
 
-    // Increment the PC register to go to the next instruction. Instructions
-    // can be 1, 2, or 3 bytes long. Hint: the high 2 bits of the
-    // instruction byte tells you how many bytes follow the instruction byte
-    // for any particular instruction.
+    // Read in the two next bytes just in case they are needed by the handler
+    const operandA = this.ram.read((this.reg.PC + 1) & 0xff);
+    const operandB = this.ram.read((this.reg.PC + 2) & 0xff);
+
+    // We need to use call() so we can set the "this" value inside the
+    // handler (otherwise it will be undefined in the handler).
+    //
+    // The handler _may_ return a new PC if it wants to set it explicitly.
+    // E.g. CALL, JMP and variants, IRET, and RET all set the PC to a new
+    // destination.
+
     const newPC = handler(operandA, operandB);
 
     if (newPC === undefined) {
@@ -270,8 +303,8 @@ class CPU {
       // Handler wants the PC set to exactly this
       this.reg.PC = newPC;
     }
-    // !!! IMPLEMENT ME
   }
+
   ADD(regA, regB) {
     this.alu('ADD', regA, regB);
   }
