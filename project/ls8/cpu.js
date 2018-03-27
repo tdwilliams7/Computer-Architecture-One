@@ -63,7 +63,7 @@ class CPU {
     let varB = this.reg[regB];
     switch (op) {
       case 'MUL':
-        this.reg[regA] = (varA * varB) & 255;
+        this.reg[regA] = varA * varB;
         break;
     }
   }
@@ -86,29 +86,38 @@ class CPU {
     let operandA = this.ram.read(this.reg.PC + 1);
     let operandB = this.ram.read(this.reg.PC + 2);
 
-    // Execute the instruction. Perform the actions for the instruction as
-    // outlined in the LS-8 spec.
+    const handle_HLT = () => {
+      this.stopClock();
+    };
 
-    switch (IR) {
-      case HLT:
-        this.stopClock();
-        break;
+    const handle_LDI = (operandA, operandB) => {
+      this.reg[operandA] = operandB;
+    };
 
-      case LDI:
-        this.reg[operandA] = operandB;
-        break;
+    const handle_PRN = operandA => {
+      console.log(this.reg[operandA]);
+    };
 
-      case PRN:
-        console.log(this.reg[operandA]);
-        break;
-      case MUL:
-        this.alu('MUL', operandA, operandB);
-        break;
+    const handle_MUL = (operandA, operandB) => {
+      this.alu('MUL', operandA, operandB);
+    };
 
-      default:
-        console.log('Unknown instruction: ' + IR.toString(2));
-        this.stopClock();
-        break;
+    const handle_ERROR = IR => {
+      console.log('Unknown instruction: ' + IR.toString(2));
+      this.stopClock();
+    };
+
+    const branchTable = {
+      [LDI]: handle_LDI,
+      [HLT]: handle_HLT,
+      [PRN]: handle_PRN,
+      [MUL]: handle_MUL
+    };
+
+    if (Object.keys(branchTable).includes(IR.toString())) {
+      branchTable[IR](operandA, operandB);
+    } else {
+      handle_ERROR(IR);
     }
 
     // Increment the PC register to go to the next instruction. Instructions
