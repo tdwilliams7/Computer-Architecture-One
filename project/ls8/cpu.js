@@ -4,12 +4,18 @@
 
 const HLT = 0b00000001;
 const LDI = 0b10011001;
-const PRN = 0b01000011;
 const MUL = 0b10101010;
+const PRN = 0b01000011;
+const POP = 0b01001100;
+const PUSH = 0b01001101;
+const DEC = 0b01111001;
+const INC = 0b01111000;
 
+const SP = 0x07;
 /**
  * Class for simulating a simple Computer (CPU & memory)
  */
+
 class CPU {
   /**
    * Initialize the CPU
@@ -18,6 +24,8 @@ class CPU {
     this.ram = ram;
 
     this.reg = new Array(8).fill(0); // General-purpose registers R0-R7
+
+    this.reg[SP] = 0xf4; // empty stack pointer
 
     // Special-purpose registers
     this.reg.PC = 0; // Program Counter
@@ -62,6 +70,12 @@ class CPU {
     let varA = this.reg[regA];
     let varB = this.reg[regB];
     switch (op) {
+      case 'DEC':
+        this.reg[regA] = varA - 1;
+        break;
+      case 'INC':
+        this.reg[regA] = varA + 1;
+        break;
       case 'MUL':
         this.reg[regA] = varA * varB;
         break;
@@ -107,11 +121,42 @@ class CPU {
       this.stopClock();
     };
 
+    const _pop = () => {
+      const value = this.ram.read(this.reg[SP]);
+      handle_INC();
+      return value;
+    };
+
+    const handle_POP = () => {
+      this.reg[operandA] = _pop();
+    };
+
+    const _push = value => {
+      handle_DEC();
+      this.ram.write(this.reg[SP], value);
+    };
+
+    const handle_PUSH = operandA => {
+      _push(this.reg[operandA]);
+    };
+
+    const handle_DEC = () => {
+      this.alu('DEC', SP);
+    };
+
+    const handle_INC = () => {
+      this.alu('INC', SP);
+    };
+
     const branchTable = {
       [LDI]: handle_LDI,
       [HLT]: handle_HLT,
       [PRN]: handle_PRN,
-      [MUL]: handle_MUL
+      [MUL]: handle_MUL,
+      [POP]: handle_POP,
+      [PUSH]: handle_PUSH,
+      [DEC]: handle_DEC,
+      [INC]: handle_INC
     };
 
     if (Object.keys(branchTable).includes(IR.toString())) {
