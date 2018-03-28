@@ -10,6 +10,9 @@ const POP = 0b01001100;
 const PUSH = 0b01001101;
 const DEC = 0b01111001;
 const INC = 0b01111000;
+const CALL = 0b01001000;
+const RET = 0b00001001;
+const ADD = 0b10101000;
 
 const SP = 0x07;
 /**
@@ -70,6 +73,9 @@ class CPU {
     let varA = this.reg[regA];
     let varB = this.reg[regB];
     switch (op) {
+      case 'ADD':
+        this.reg[regA] = varA + varB;
+        break;
       case 'DEC':
         this.reg[regA] = varA - 1;
         break;
@@ -88,7 +94,7 @@ class CPU {
   tick() {
     // Load the instruction register (IR--can just be a local variable here)
     // from the memory address pointed to by the PC. (I.e. the PC holds the
-    // index into memory of the next instruction.)
+    // index into memory of the current instruction.)
     let IR = this.ram.read(this.reg.PC);
 
     // Debugging output
@@ -96,6 +102,7 @@ class CPU {
 
     // Get the two bytes in memory _after_ the PC in case the instruction
     // needs them.
+    //
 
     let operandA = this.ram.read(this.reg.PC + 1);
     let operandB = this.ram.read(this.reg.PC + 2);
@@ -148,6 +155,20 @@ class CPU {
       this.alu('INC', SP);
     };
 
+    const handle_CALL = operandA => {
+      const nextAddr = this.reg.PC + 2;
+      _push(nextAddr);
+      this.reg.PC = this.reg[operandA];
+    };
+
+    const handle_RET = () => {
+      this.reg.PC = _pop();
+    };
+
+    const handle_ADD = (operandA, operandB) => {
+      this.alu('ADD', operandA, operandB);
+    };
+
     const branchTable = {
       [LDI]: handle_LDI,
       [HLT]: handle_HLT,
@@ -156,7 +177,10 @@ class CPU {
       [POP]: handle_POP,
       [PUSH]: handle_PUSH,
       [DEC]: handle_DEC,
-      [INC]: handle_INC
+      [INC]: handle_INC,
+      [CALL]: handle_CALL,
+      [RET]: handle_RET,
+      [ADD]: handle_ADD
     };
 
     if (Object.keys(branchTable).includes(IR.toString())) {
@@ -170,7 +194,11 @@ class CPU {
     // instruction byte tells you how many bytes follow the instruction byte
     // for any particular instruction.
 
-    this.reg.PC += (IR >>> 6) + 1;
+    // TODO:
+    // if current instruction is RET OR CALL dont increment.
+    if (IR !== RET && IR !== CALL) {
+      this.reg.PC += (IR >>> 6) + 1;
+    }
   }
 }
 
